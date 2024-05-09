@@ -13,10 +13,15 @@ interface ITpad is IERC20 {
 
 contract MigrationOperator is Ownable {
     using SafeERC20 for ITpad;
+    using SafeERC20 for IERC20;
 
     IUniswapV2Router02 public constant router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
     ITpad public constant TPAD = ITpad(0x5483DC6abDA5F094865120B2D251b5744fc2ECB5);
+    IERC20 public constant BIOT = IERC20(0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984); // UNI token address for now
+
+    mapping(address => bool) public hasMigrated;
+    mapping(address => bool) public hasClaimed;
 
     address public liqReceiver;
 
@@ -34,6 +39,12 @@ contract MigrationOperator is Ownable {
         liqReceiver = _liqReceiver;
     }
 
+    function skim() external onlyOwner {
+        uint256 biotBalance = BIOT.balanceOf(address(this));
+
+        BIOT.safeTransfer(msg.sender, biotBalance);
+    }
+
     function migrate() external {
         // transfer all sender taopad to this contract.
         _transferTpad(msg.sender);
@@ -45,6 +56,18 @@ contract MigrationOperator is Ownable {
 
         // transfer all the ether to liqReceiver.
         _transferLiq(liqReceiver);
+
+        // record the sender has migrated.
+        hasMigrated[msg.sender] = true;
+    }
+
+    function claim(uint256 amount) external {
+        require(hasMigrated[msg.sender], "Sender has not migrated");
+        require(!hasClaimed[msg.sender], "Sender has already claimed");
+
+        hasClaimed[msg.sender] = true;
+
+        BIOT.safeTransfer(msg.sender, amount);
     }
 
     function _transferTpad(address from) private {
