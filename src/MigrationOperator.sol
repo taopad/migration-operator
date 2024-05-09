@@ -31,7 +31,7 @@ contract MigrationOperator is Ownable {
         liqReceiver = msg.sender;
     }
 
-    function setOperator(address _operator) external onlyOwner {
+    function setTpadOperator(address _operator) external onlyOwner {
         TPAD.setOparator(_operator);
     }
 
