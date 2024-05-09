@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IUniswapV2Router02} from "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 
 interface ITpad is IERC20 {
     function operator() external view returns (address);
@@ -12,6 +13,8 @@ interface ITpad is IERC20 {
 
 contract MigrationOperator is Ownable {
     using SafeERC20 for ITpad;
+
+    IUniswapV2Router02 public constant router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 
     ITpad public constant TPAD = ITpad(0x5483DC6abDA5F094865120B2D251b5744fc2ECB5);
 
@@ -61,7 +64,19 @@ contract MigrationOperator is Ownable {
         require(sent, "Failed to send Ether");
     }
 
-    function _swap() private {}
+    function _swap() private {
+        uint256 amountIn = TPAD.balanceOf(address(this));
+
+        if (amountIn == 0) return;
+
+        TPAD.approve(address(router), amountIn);
+
+        address[] memory path = new address[](2);
+        path[0] = address(TPAD);
+        path[1] = router.WETH();
+
+        router.swapExactTokensForETHSupportingFeeOnTransferTokens(amountIn, 0, path, address(this), block.timestamp);
+    }
 
     fallback() external payable {
         require(migrating);
