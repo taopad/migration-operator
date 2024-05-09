@@ -4,6 +4,7 @@ pragma solidity ^0.8.25;
 import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {MerkleProof} from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import {IUniswapV2Router02} from "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 
 interface ITpad is IERC20 {
@@ -25,6 +26,8 @@ contract MigrationOperator is Ownable {
 
     address public liqReceiver;
 
+    bytes32 public root;
+
     bool public migrating;
 
     constructor() Ownable(msg.sender) {
@@ -37,6 +40,10 @@ contract MigrationOperator is Ownable {
 
     function setLiqReceiver(address _liqReceiver) external onlyOwner {
         liqReceiver = _liqReceiver;
+    }
+
+    function setRoot(bytes32 _root) external onlyOwner {
+        root = _root;
     }
 
     function skim() external onlyOwner {
@@ -61,9 +68,16 @@ contract MigrationOperator is Ownable {
         hasMigrated[msg.sender] = true;
     }
 
-    function claim(uint256 amount) external {
+    function claim(uint256 amount, bytes32[] calldata proof) external {
         require(hasMigrated[msg.sender], "Sender has not migrated");
         require(!hasClaimed[msg.sender], "Sender has already claimed");
+
+        bool isValid =
+            MerkleProof.verifyCalldata(proof, root, keccak256(bytes.concat(keccak256(abi.encode(msg.sender, amount)))));
+
+        if (!isValid) {
+            revert("Invalid proof");
+        }
 
         hasClaimed[msg.sender] = true;
 
