@@ -9,7 +9,7 @@ import {IUniswapV2Router02} from "@uniswap/v2-periphery/contracts/interfaces/IUn
 
 interface ITpad is IERC20 {
     function operator() external view returns (address);
-    function setOparator(address) external;
+    function setOperator(address) external;
 }
 
 contract MigrationOperator is Ownable {
@@ -35,7 +35,7 @@ contract MigrationOperator is Ownable {
     }
 
     function setTpadOperator(address _operator) external onlyOwner {
-        TPAD.setOparator(_operator);
+        TPAD.setOperator(_operator);
     }
 
     function setLiqReceiver(address _liqReceiver) external onlyOwner {
