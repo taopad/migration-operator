@@ -3,3 +3,4 @@ forge-std/=lib/forge-std/src/
 openzeppelin-contracts/=lib/openzeppelin-contracts/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 @uniswap/v2-periphery/=lib/v2-periphery/
+@murky/=lib/murky/

@@ -77,15 +77,15 @@ contract MigrationOperator is Ownable {
     }
 
     function claim(uint256 biotAmount, bytes32[] calldata proof) external {
-        require(hasMigrated[msg.sender], "Sender has not migrated");
-        require(!hasClaimed[msg.sender], "Sender has already claimed");
+        require(hasMigrated[msg.sender], "!migrated");
+        require(!hasClaimed[msg.sender], "!claimed");
 
         bool isValid = MerkleProof.verifyCalldata(
             proof, root, keccak256(bytes.concat(keccak256(abi.encode(msg.sender, biotAmount))))
         );
 
         if (!isValid) {
-            revert("Invalid proof");
+            revert("!proof");
         }
 
         hasClaimed[msg.sender] = true;
