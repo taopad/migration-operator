@@ -3,10 +3,13 @@ pragma solidity ^0.8.25;
 
 import {Test, console} from "forge-std/Test.sol";
 import {ITpad, MigrationOperator} from "../src/MigrationOperator.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {IUniswapV2Router02} from "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 
 contract MigrationOperatorTest is Test {
     ITpad public TPAD;
+    IERC20 public BIOT;
     IUniswapV2Router02 public router;
     MigrationOperator public operator;
     address[] public sellPath;
@@ -21,6 +24,7 @@ contract MigrationOperatorTest is Test {
         operator = new MigrationOperator();
 
         TPAD = operator.TPAD();
+        BIOT = operator.BIOT();
 
         router = operator.router();
 
@@ -62,27 +66,118 @@ contract MigrationOperatorTest is Test {
         assertEq(operator.owner(), address(this));
     }
 
-    function testDefaultLiqReceiver() public view {
-        assertEq(operator.liqReceiver(), address(this));
-    }
-
-    function testCanSetTpadOperator(address newOperator) public {
+    function testOwnerCanSetTpadOperator(address newOperator) public {
         vm.assume(address(0) != newOperator);
 
-        // set taopad operator as the migration operator.
+        // non owner cant set taopad operator.
+        vm.prank(address(1));
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
+
+        operator.setTpadOperator(newOperator);
+
+        // taopad operator must be the migration operator first.
+        vm.expectRevert("!operator");
+
+        operator.setTpadOperator(newOperator);
+
+        // set migration operator as taopad operator.
         startMigration();
 
-        assertEq(TPAD.operator(), address(operator));
-
-        // cant set operator to 0x0.
+        // owner cant set taopad operator to 0x0.
         vm.expectRevert("!address");
 
         operator.setTpadOperator(address(0));
 
-        // can set operator to any other address.
+        // owner can set taopad operator to any non zero address.
         operator.setTpadOperator(newOperator);
 
         assertEq(TPAD.operator(), newOperator);
+    }
+
+    function testOwnerCanSetLiqReceiver(address newLiqReceiver) public {
+        vm.assume(address(0) != newLiqReceiver);
+
+        // by default the liq receiver is the deployer.
+        assertEq(operator.liqReceiver(), address(this));
+
+        // non owner cant set liq receiver.
+        vm.prank(address(1));
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
+
+        operator.setLiqReceiver(newLiqReceiver);
+
+        // owner cant set liq receiver to 0x0.
+        vm.expectRevert("!address");
+
+        operator.setLiqReceiver(address(0));
+
+        // owner can set liq receiver to any non zero address.
+        operator.setLiqReceiver(newLiqReceiver);
+
+        assertEq(operator.liqReceiver(), newLiqReceiver);
+    }
+
+    function testOwnerCanSetRoot(bytes32 root) public {
+        // by default the root is 0x0.
+        assertEq(operator.root(), bytes32(0));
+
+        // non owner cant set root.
+        vm.prank(address(1));
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
+
+        operator.setRoot(root);
+
+        // owner can set root.
+        operator.setRoot(root);
+
+        assertEq(operator.root(), root);
+    }
+
+    function testOwnerCanAdjustBiotBalanceTo(uint256 biotBalance) public {
+        // get a random biot balance between 1 and 10M biot.
+        biotBalance = bound(biotBalance, 10 ** 18, 10_000_000 * (10 ** 18));
+
+        assertGe(biotBalance, 10 ** 18);
+        assertLe(biotBalance, 10_000_000 * (10 ** 18));
+
+        // send it to the migration operator.
+        deal(address(BIOT), address(operator), biotBalance);
+
+        assertEq(BIOT.balanceOf(address(this)), 0);
+        assertEq(BIOT.balanceOf(address(operator)), biotBalance);
+
+        // non owner cant adjust biot balance.
+        vm.prank(address(1));
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
+
+        operator.adjustTo(0);
+
+        // owner cant adjust to a value bigger than the operator biot balance.
+        vm.expectRevert("!balance");
+
+        operator.adjustTo(biotBalance + 1);
+
+        // owner can adjust to the exact operator biot balance (useless but working).
+        operator.adjustTo(biotBalance);
+
+        assertEq(BIOT.balanceOf(address(this)), 0);
+        assertEq(BIOT.balanceOf(address(operator)), biotBalance);
+
+        // owner can adjust to less than operator biot balance.
+        operator.adjustTo(biotBalance - 10);
+
+        assertEq(BIOT.balanceOf(address(this)), 10);
+        assertEq(BIOT.balanceOf(address(operator)), biotBalance - 10);
+
+        // owner can withdraw all the operator biot balance.
+        operator.adjustTo(0);
+
+        assertEq(BIOT.balanceOf(address(this)), biotBalance);
+        assertEq(BIOT.balanceOf(address(operator)), 0);
     }
 
     function testSellingIsDisabledAfterMigrationStarted() public {

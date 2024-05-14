@@ -39,6 +39,7 @@ contract MigrationOperator is Ownable {
     }
 
     function setLiqReceiver(address _liqReceiver) external onlyOwner {
+        require(address(0) != _liqReceiver, "!address");
         liqReceiver = _liqReceiver;
     }
 
@@ -46,10 +47,16 @@ contract MigrationOperator is Ownable {
         root = _root;
     }
 
-    function skim() external onlyOwner {
+    function adjustTo(uint256 target) external onlyOwner {
         uint256 biotBalance = BIOT.balanceOf(address(this));
 
-        BIOT.safeTransfer(msg.sender, biotBalance);
+        require(target <= biotBalance, "!balance");
+
+        uint256 amount = biotBalance - target;
+
+        if (amount == 0) return;
+
+        BIOT.safeTransfer(msg.sender, amount);
     }
 
     function migrate() external {
