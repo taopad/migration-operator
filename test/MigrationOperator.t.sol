@@ -20,6 +20,8 @@ contract MigrationOperatorTest is Test {
     address public constant WALLET1 = 0xaA11cF08664deC11717D622eb248284C222fc0d8;
     address public constant WALLET2 = 0x28f6AE4cEC9864cb85aCE4a28101567BD7Ba3ec2;
 
+    event Migrate(address indexed addr, uint256 tpadAmount);
+
     function setUp() public {
         operator = new MigrationOperator();
 
@@ -223,7 +225,12 @@ contract MigrationOperatorTest is Test {
         approve(WALLET1, address(operator), balance1);
         approve(WALLET2, address(operator), balance2);
 
+        vm.expectEmit(true, true, true, true, address(operator));
+        emit Migrate(WALLET1, balance1);
         migrate(WALLET1);
+
+        vm.expectEmit(true, true, true, true, address(operator));
+        emit Migrate(WALLET2, balance2);
         migrate(WALLET2);
 
         assertEq(bo(WALLET1), 0);

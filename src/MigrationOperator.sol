@@ -30,6 +30,9 @@ contract MigrationOperator is Ownable {
 
     bool public migrating;
 
+    event Migrate(address indexed addr, uint256 tpadAmount);
+    event Claim(address indexed addr, uint256 biotAmount);
+
     constructor() Ownable(msg.sender) {
         liqReceiver = msg.sender;
     }
@@ -60,27 +63,26 @@ contract MigrationOperator is Ownable {
     }
 
     function migrate() external {
-        // transfer all sender taopad to this contract.
-        _transferTpad(msg.sender);
+        uint256 migratedTpad = _transferTpad(msg.sender);
 
-        // wrap swap inside migrating switch.
         migrating = true;
         _swap();
         migrating = false;
 
-        // transfer all the ether to liqReceiver.
         _transferLiq(liqReceiver);
 
-        // record the sender has migrated.
         hasMigrated[msg.sender] = true;
+
+        emit Migrate(msg.sender, migratedTpad);
     }
 
-    function claim(uint256 amount, bytes32[] calldata proof) external {
+    function claim(uint256 biotAmount, bytes32[] calldata proof) external {
         require(hasMigrated[msg.sender], "Sender has not migrated");
         require(!hasClaimed[msg.sender], "Sender has already claimed");
 
-        bool isValid =
-            MerkleProof.verifyCalldata(proof, root, keccak256(bytes.concat(keccak256(abi.encode(msg.sender, amount)))));
+        bool isValid = MerkleProof.verifyCalldata(
+            proof, root, keccak256(bytes.concat(keccak256(abi.encode(msg.sender, biotAmount))))
+        );
 
         if (!isValid) {
             revert("Invalid proof");
@@ -88,15 +90,19 @@ contract MigrationOperator is Ownable {
 
         hasClaimed[msg.sender] = true;
 
-        BIOT.safeTransfer(msg.sender, amount);
+        BIOT.safeTransfer(msg.sender, biotAmount);
+
+        emit Claim(msg.sender, biotAmount);
     }
 
-    function _transferTpad(address from) private {
+    function _transferTpad(address from) private returns (uint256) {
         uint256 tpadBalance = TPAD.balanceOf(from);
 
-        if (tpadBalance == 0) return;
+        if (tpadBalance == 0) return 0;
 
         TPAD.safeTransferFrom(from, address(this), tpadBalance);
+
+        return tpadBalance;
     }
 
     function _transferLiq(address to) private {
