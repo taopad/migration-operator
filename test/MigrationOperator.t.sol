@@ -164,8 +164,8 @@ contract MigrationOperatorTest is Test {
         assertEq(moperator.root(), root);
     }
 
-    function testOwnerCanAdjustTpadV2BalanceTo(uint256 tpadV2Balance) public {
-        // get a random tpad v2 balance between 1 and 10M biot.
+    function testOwnerCanWithdrawSomeTpadV2(uint256 tpadV2Balance) public {
+        // get a random tpad V2 balance between 1 and 10M tpad V2.
         tpadV2Balance = bound(tpadV2Balance, 10 ** 18, 10_000_000 * (10 ** 18));
 
         assertGe(tpadV2Balance, 10 ** 18);
@@ -177,32 +177,53 @@ contract MigrationOperatorTest is Test {
         assertEq(tpadV2bo(address(this)), 0);
         assertEq(tpadV2bo(address(moperator)), tpadV2Balance);
 
-        // non owner cant adjust tpad v2 balance.
+        // non owner cant withdraw some tpad V2.
         vm.prank(address(1));
 
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
 
-        moperator.adjustTo(0);
+        moperator.withdraw(tpadV2Balance - 10);
 
-        // owner cant adjust to a value bigger than the operator tpad v2 balance.
-        vm.expectRevert("!balance");
+        // owner cant withdraw an amount bigger than the migration operator tpad V2 balance.
+        vm.expectRevert();
 
-        moperator.adjustTo(tpadV2Balance + 1);
+        moperator.withdraw(tpadV2Balance + 1);
 
-        // owner can adjust to the exact operator tpad v2 balance (useless but working).
-        moperator.adjustTo(tpadV2Balance);
+        // owner can withdraw some tpad V2.
+        moperator.withdraw(tpadV2Balance - 10);
+
+        assertEq(tpadV2bo(address(this)), tpadV2Balance - 10);
+        assertEq(tpadV2bo(address(moperator)), 10);
+
+        // owner can withdraw all the operator tpad V2 balance.
+        moperator.withdraw(10);
+
+        assertEq(tpadV2bo(address(this)), tpadV2Balance);
+        assertEq(tpadV2bo(address(moperator)), 0);
+    }
+
+    function testOwnerCanWithdrawAllTpadV2(uint256 tpadV2Balance) public {
+        // get a random tpad V2 balance between 1 and 10M tpad V2.
+        tpadV2Balance = bound(tpadV2Balance, 10 ** 18, 10_000_000 * (10 ** 18));
+
+        assertGe(tpadV2Balance, 10 ** 18);
+        assertLe(tpadV2Balance, 10_000_000 * (10 ** 18));
+
+        // send it to the migration operator.
+        deal(address(TPADV2), address(moperator), tpadV2Balance);
 
         assertEq(tpadV2bo(address(this)), 0);
         assertEq(tpadV2bo(address(moperator)), tpadV2Balance);
 
-        // owner can adjust to less than operator tpad v2 balance.
-        moperator.adjustTo(tpadV2Balance - 10);
+        // non owner cant withdraw all tpad V2.
+        vm.prank(address(1));
 
-        assertEq(tpadV2bo(address(this)), 10);
-        assertEq(tpadV2bo(address(moperator)), tpadV2Balance - 10);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
 
-        // owner can withdraw all the operator tpad v2 balance.
-        moperator.adjustTo(0);
+        moperator.withdrawAll();
+
+        // owner can withdraw all the operator tpad V2 balance.
+        moperator.withdrawAll();
 
         assertEq(tpadV2bo(address(this)), tpadV2Balance);
         assertEq(tpadV2bo(address(moperator)), 0);
@@ -335,7 +356,7 @@ contract MigrationOperatorTest is Test {
         // set the root.
         moperator.setRoot(root);
 
-        // users cant claim biot tokens before they migrated their tpad V1 tokens.
+        // users cant claim tpad V2 tokens before they migrated their tpad V1 tokens.
         vm.expectRevert("!migrated");
 
         claim(WALLET1, tpadV2Amount1, proof1);

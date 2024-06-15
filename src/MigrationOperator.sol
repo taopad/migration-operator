@@ -47,16 +47,14 @@ contract MigrationOperator is Ownable {
         root = _root;
     }
 
-    function adjustTo(uint256 target) external onlyOwner {
+    function withdraw(uint256 tpadV2Amount) external onlyOwner {
+        SafeERC20.safeTransfer(TPADV2, msg.sender, tpadV2Amount);
+    }
+
+    function withdrawAll() external onlyOwner {
         uint256 tpadV2Balance = TPADV2.balanceOf(address(this));
 
-        require(target <= tpadV2Balance, "!balance");
-
-        uint256 amount = tpadV2Balance - target;
-
-        if (amount == 0) return;
-
-        SafeERC20.safeTransfer(TPADV2, msg.sender, amount);
+        SafeERC20.safeTransfer(TPADV2, msg.sender, tpadV2Balance);
     }
 
     function migrate() external {
