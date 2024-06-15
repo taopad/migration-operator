@@ -9,10 +9,10 @@ import {IUniswapV2Router02} from "@uniswap/v2-periphery/contracts/interfaces/IUn
 import {Merkle} from "@murky/src/Merkle.sol";
 
 contract MigrationOperatorTest is Test {
-    ITpad public TPAD;
-    IERC20 public BIOT;
+    ITpad public TPADV1;
+    IERC20 public TPADV2;
     IUniswapV2Router02 public router;
-    MigrationOperator public operator;
+    MigrationOperator public moperator;
     address[] public sellPath;
 
     address liqReceiver = address(1);
@@ -21,76 +21,80 @@ contract MigrationOperatorTest is Test {
     address public constant WALLET1 = 0xaA11cF08664deC11717D622eb248284C222fc0d8;
     address public constant WALLET2 = 0x28f6AE4cEC9864cb85aCE4a28101567BD7Ba3ec2;
 
-    event Migrate(address indexed addr, uint256 tpadAmount);
-    event Claim(address indexed addr, uint256 biotAmount);
+    event Migrate(address indexed addr, uint256 tpadV1Amount);
+    event Claim(address indexed addr, uint256 tpadV2Amount);
 
     function setUp() public {
-        operator = new MigrationOperator();
+        moperator = new MigrationOperator();
 
-        TPAD = operator.TPAD();
-        BIOT = operator.BIOT();
+        TPADV1 = moperator.TPADV1();
+        TPADV2 = moperator.TPADV2();
 
-        router = operator.router();
+        router = moperator.router();
 
-        sellPath.push(address(TPAD));
+        sellPath.push(address(TPADV1));
         sellPath.push(router.WETH());
     }
 
     function startMigration() private {
-        operator.setLiqReceiver(liqReceiver);
+        moperator.setLiqReceiver(liqReceiver);
 
-        vm.prank(TPAD.operator());
+        vm.prank(TPADV1.operator());
 
-        TPAD.setOperator(address(operator));
+        TPADV1.setOperator(address(moperator));
     }
 
-    function tpadbo(address addr) private view returns (uint256) {
-        return TPAD.balanceOf(addr);
+    function tpadV1bo(address addr) private view returns (uint256) {
+        return TPADV1.balanceOf(addr);
     }
 
-    function biotbo(address addr) private view returns (uint256) {
-        return BIOT.balanceOf(addr);
+    function tpadV2bo(address addr) private view returns (uint256) {
+        return TPADV2.balanceOf(addr);
     }
 
-    function approve(address addr, address spender, uint256 amount) private {
+    function approve(address addr, address spender, uint256 tpadV1amount) private {
         vm.prank(addr);
 
-        TPAD.approve(spender, amount);
+        TPADV1.approve(spender, tpadV1amount);
     }
 
-    function sell(address addr, uint256 amount) private {
+    function sell(address addr, uint256 tpadV2amount) private {
         vm.prank(addr);
 
-        router.swapExactTokensForETHSupportingFeeOnTransferTokens(amount, 0, sellPath, addr, block.timestamp);
+        router.swapExactTokensForETHSupportingFeeOnTransferTokens(tpadV2amount, 0, sellPath, addr, block.timestamp);
     }
 
     function migrate(address addr) private {
         vm.prank(addr);
 
-        operator.migrate();
+        moperator.migrate();
     }
 
-    function claim(address addr, uint256 biotAmount, bytes32[] memory proof) private {
+    function claim(address addr, uint256 tpadV2Amount, bytes32[] memory proof) private {
         vm.prank(addr);
 
-        operator.claim(biotAmount, proof);
+        moperator.claim(tpadV2Amount, proof);
     }
 
-    function buildMerkleTree(uint256 biotAmount1, uint256 biotAmount2)
+    function buildMerkleTree(uint256 tpadV2Amount1, uint256 tpadV2Amount2)
         private
         returns (bytes32, bytes32[] memory, bytes32[] memory)
     {
         Merkle m = new Merkle();
 
         bytes32[] memory data = new bytes32[](2);
-        data[0] = keccak256(bytes.concat(keccak256(abi.encode(WALLET1, biotAmount1))));
-        data[1] = keccak256(bytes.concat(keccak256(abi.encode(WALLET2, biotAmount2))));
+        data[0] = keccak256(bytes.concat(keccak256(abi.encode(WALLET1, tpadV2Amount1))));
+        data[1] = keccak256(bytes.concat(keccak256(abi.encode(WALLET2, tpadV2Amount2))));
 
         return (m.getRoot(data), m.getProof(data, 0), m.getProof(data, 1));
     }
 
     function testDefaultOwner() public view {
-        assertEq(operator.owner(), address(this));
+        assertEq(moperator.owner(), address(this));
+    }
+
+    function testDefaultLiqReceiver() public view {
+        assertEq(moperator.liqReceiver(), address(this));
     }
 
     function testOwnerCanSetTpadOperator(address newOperator) public {
@@ -101,12 +105,12 @@ contract MigrationOperatorTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
 
-        operator.setTpadOperator(newOperator);
+        moperator.setTpadOperator(newOperator);
 
         // taopad operator must be the migration operator first.
         vm.expectRevert("!operator");
 
-        operator.setTpadOperator(newOperator);
+        moperator.setTpadOperator(newOperator);
 
         // set migration operator as taopad operator.
         startMigration();
@@ -114,111 +118,108 @@ contract MigrationOperatorTest is Test {
         // owner cant set taopad operator to 0x0.
         vm.expectRevert("!address");
 
-        operator.setTpadOperator(address(0));
+        moperator.setTpadOperator(address(0));
 
         // owner can set taopad operator to any non zero address.
-        operator.setTpadOperator(newOperator);
+        moperator.setTpadOperator(newOperator);
 
-        assertEq(TPAD.operator(), newOperator);
+        assertEq(TPADV1.operator(), newOperator);
     }
 
     function testOwnerCanSetLiqReceiver(address newLiqReceiver) public {
         vm.assume(address(0) != newLiqReceiver);
-
-        // by default the liq receiver is the deployer.
-        assertEq(operator.liqReceiver(), address(this));
 
         // non owner cant set liq receiver.
         vm.prank(address(1));
 
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
 
-        operator.setLiqReceiver(newLiqReceiver);
+        moperator.setLiqReceiver(newLiqReceiver);
 
         // owner cant set liq receiver to 0x0.
         vm.expectRevert("!address");
 
-        operator.setLiqReceiver(address(0));
+        moperator.setLiqReceiver(address(0));
 
         // owner can set liq receiver to any non zero address.
-        operator.setLiqReceiver(newLiqReceiver);
+        moperator.setLiqReceiver(newLiqReceiver);
 
-        assertEq(operator.liqReceiver(), newLiqReceiver);
+        assertEq(moperator.liqReceiver(), newLiqReceiver);
     }
 
     function testOwnerCanSetRoot(bytes32 root) public {
         // by default the root is 0x0.
-        assertEq(operator.root(), bytes32(0));
+        assertEq(moperator.root(), bytes32(0));
 
         // non owner cant set root.
         vm.prank(address(1));
 
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
 
-        operator.setRoot(root);
+        moperator.setRoot(root);
 
         // owner can set root.
-        operator.setRoot(root);
+        moperator.setRoot(root);
 
-        assertEq(operator.root(), root);
+        assertEq(moperator.root(), root);
     }
 
-    function testOwnerCanAdjustBiotBalanceTo(uint256 biotBalance) public {
-        // get a random biot balance between 1 and 10M biot.
-        biotBalance = bound(biotBalance, 10 ** 18, 10_000_000 * (10 ** 18));
+    function testOwnerCanAdjustTpadV2BalanceTo(uint256 tpadV2Balance) public {
+        // get a random tpad v2 balance between 1 and 10M biot.
+        tpadV2Balance = bound(tpadV2Balance, 10 ** 18, 10_000_000 * (10 ** 18));
 
-        assertGe(biotBalance, 10 ** 18);
-        assertLe(biotBalance, 10_000_000 * (10 ** 18));
+        assertGe(tpadV2Balance, 10 ** 18);
+        assertLe(tpadV2Balance, 10_000_000 * (10 ** 18));
 
         // send it to the migration operator.
-        deal(address(BIOT), address(operator), biotBalance);
+        deal(address(TPADV2), address(moperator), tpadV2Balance);
 
-        assertEq(biotbo(address(this)), 0);
-        assertEq(biotbo(address(operator)), biotBalance);
+        assertEq(tpadV2bo(address(this)), 0);
+        assertEq(tpadV2bo(address(moperator)), tpadV2Balance);
 
-        // non owner cant adjust biot balance.
+        // non owner cant adjust tpad v2 balance.
         vm.prank(address(1));
 
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(1)));
 
-        operator.adjustTo(0);
+        moperator.adjustTo(0);
 
-        // owner cant adjust to a value bigger than the operator biot balance.
+        // owner cant adjust to a value bigger than the operator tpad v2 balance.
         vm.expectRevert("!balance");
 
-        operator.adjustTo(biotBalance + 1);
+        moperator.adjustTo(tpadV2Balance + 1);
 
-        // owner can adjust to the exact operator biot balance (useless but working).
-        operator.adjustTo(biotBalance);
+        // owner can adjust to the exact operator tpad v2 balance (useless but working).
+        moperator.adjustTo(tpadV2Balance);
 
-        assertEq(biotbo(address(this)), 0);
-        assertEq(biotbo(address(operator)), biotBalance);
+        assertEq(tpadV2bo(address(this)), 0);
+        assertEq(tpadV2bo(address(moperator)), tpadV2Balance);
 
-        // owner can adjust to less than operator biot balance.
-        operator.adjustTo(biotBalance - 10);
+        // owner can adjust to less than operator tpad v2 balance.
+        moperator.adjustTo(tpadV2Balance - 10);
 
-        assertEq(biotbo(address(this)), 10);
-        assertEq(biotbo(address(operator)), biotBalance - 10);
+        assertEq(tpadV2bo(address(this)), 10);
+        assertEq(tpadV2bo(address(moperator)), tpadV2Balance - 10);
 
-        // owner can withdraw all the operator biot balance.
-        operator.adjustTo(0);
+        // owner can withdraw all the operator tpad v2 balance.
+        moperator.adjustTo(0);
 
-        assertEq(biotbo(address(this)), biotBalance);
-        assertEq(biotbo(address(operator)), 0);
+        assertEq(tpadV2bo(address(this)), tpadV2Balance);
+        assertEq(tpadV2bo(address(moperator)), 0);
     }
 
     function testSellingTpadTokensIsDisabledAfterMigrationStarted() public {
         // get two halfs of the user balance.
-        uint256 tpadBalance1 = tpadbo(WALLET1);
-        uint256 firstHalf = tpadBalance1 / 2;
-        uint256 otherHalf = tpadBalance1 - firstHalf;
+        uint256 tpadV1Balance1 = tpadV1bo(WALLET1);
+        uint256 firstHalf = tpadV1Balance1 / 2;
+        uint256 otherHalf = tpadV1Balance1 - firstHalf;
 
         // can sell before migration started.
         approve(WALLET1, address(router), firstHalf);
 
         sell(WALLET1, firstHalf);
 
-        assertEq(tpadbo(WALLET1), otherHalf);
+        assertEq(tpadV1bo(WALLET1), otherHalf);
 
         // cant sell anymore after migration started.
         startMigration();
@@ -229,23 +230,23 @@ contract MigrationOperatorTest is Test {
 
         sell(WALLET1, otherHalf);
 
-        assertEq(tpadbo(WALLET1), otherHalf);
+        assertEq(tpadV1bo(WALLET1), otherHalf);
     }
 
     function testTpadTokensCanBeMigratedAfterMigrationStarted() public {
         // assert original state.
         uint256 originalLiqReceiverEth;
-        uint256 tpadBalance1 = tpadbo(WALLET1);
-        uint256 tpadBalance2 = tpadbo(WALLET2);
+        uint256 tpadV1Balance1 = tpadV1bo(WALLET1);
+        uint256 tpadV1Balance2 = tpadV1bo(WALLET2);
 
-        assertGt(tpadBalance1, 0);
-        assertGt(tpadBalance2, 0);
-        assertGt(tpadBalance1 + tpadBalance2, 10_000 * (10 ** 18)); // ensure more than 10k can be migrated.
-        assertEq(tpadbo(address(operator)), 0);
-        assertFalse(operator.hasMigrated(address(WALLET1)));
-        assertFalse(operator.hasMigrated(address(WALLET2)));
-        assertFalse(operator.hasClaimed(address(WALLET1)));
-        assertFalse(operator.hasClaimed(address(WALLET2)));
+        assertGt(tpadV1Balance1, 0);
+        assertGt(tpadV1Balance2, 0);
+        assertGt(tpadV1Balance1 + tpadV1Balance2, 10_000 * (10 ** 18)); // ensure more than 10k can be migrated.
+        assertEq(tpadV1bo(address(moperator)), 0);
+        assertFalse(moperator.hasMigrated(address(WALLET1)));
+        assertFalse(moperator.hasMigrated(address(WALLET2)));
+        assertFalse(moperator.hasClaimed(address(WALLET1)));
+        assertFalse(moperator.hasClaimed(address(WALLET2)));
 
         // start the migration.
         startMigration();
@@ -253,21 +254,21 @@ contract MigrationOperatorTest is Test {
         // migrate first user.
         originalLiqReceiverEth = liqReceiver.balance;
 
-        approve(WALLET1, address(operator), tpadBalance1);
+        approve(WALLET1, address(moperator), tpadV1Balance1);
 
-        vm.expectEmit(true, true, true, true, address(operator));
+        vm.expectEmit(true, true, true, true, address(moperator));
 
-        emit Migrate(WALLET1, tpadBalance1);
+        emit Migrate(WALLET1, tpadV1Balance1);
 
         migrate(WALLET1);
 
-        assertEq(tpadbo(WALLET1), 0);
-        assertEq(tpadbo(WALLET2), tpadBalance2);
-        assertEq(tpadbo(address(operator)), 0);
-        assertTrue(operator.hasMigrated(WALLET1));
-        assertFalse(operator.hasMigrated(WALLET2));
-        assertFalse(operator.hasClaimed(address(WALLET1)));
-        assertFalse(operator.hasClaimed(address(WALLET2)));
+        assertEq(tpadV1bo(WALLET1), 0);
+        assertEq(tpadV1bo(WALLET2), tpadV1Balance2);
+        assertEq(tpadV1bo(address(moperator)), 0);
+        assertTrue(moperator.hasMigrated(WALLET1));
+        assertFalse(moperator.hasMigrated(WALLET2));
+        assertFalse(moperator.hasClaimed(address(WALLET1)));
+        assertFalse(moperator.hasClaimed(address(WALLET2)));
         assertGt(liqReceiver.balance, originalLiqReceiverEth);
 
         console.log(liqReceiver.balance - originalLiqReceiverEth);
@@ -275,130 +276,132 @@ contract MigrationOperatorTest is Test {
         // migrate second user.
         originalLiqReceiverEth = liqReceiver.balance;
 
-        approve(WALLET2, address(operator), tpadBalance2);
+        approve(WALLET2, address(moperator), tpadV1Balance2);
 
-        vm.expectEmit(true, true, true, true, address(operator));
+        vm.expectEmit(true, true, true, true, address(moperator));
 
-        emit Migrate(WALLET2, tpadBalance2);
+        emit Migrate(WALLET2, tpadV1Balance2);
 
         migrate(WALLET2);
 
-        assertEq(tpadbo(WALLET1), 0);
-        assertEq(tpadbo(WALLET2), 0);
-        assertEq(tpadbo(address(operator)), 0);
-        assertTrue(operator.hasMigrated(WALLET1));
-        assertTrue(operator.hasMigrated(WALLET2));
-        assertFalse(operator.hasClaimed(address(WALLET1)));
-        assertFalse(operator.hasClaimed(address(WALLET2)));
+        assertEq(tpadV1bo(WALLET1), 0);
+        assertEq(tpadV1bo(WALLET2), 0);
+        assertEq(tpadV1bo(address(moperator)), 0);
+        assertTrue(moperator.hasMigrated(WALLET1));
+        assertTrue(moperator.hasMigrated(WALLET2));
+        assertFalse(moperator.hasClaimed(address(WALLET1)));
+        assertFalse(moperator.hasClaimed(address(WALLET2)));
         assertGt(liqReceiver.balance, originalLiqReceiverEth);
 
         console.log(liqReceiver.balance - originalLiqReceiverEth);
     }
 
-    function testBiotTokensCanBeClaimedOnceAfterTpadTokensMigration(uint256 biotAmount1, uint256 biotAmount2) public {
-        // get two random biot amount between 1 and 1M.
-        biotAmount1 = bound(biotAmount1, 10 ** 18, 1_000_000 * (10 ** 18));
-        biotAmount2 = bound(biotAmount2, 10 ** 18, 1_000_000 * (10 ** 18));
+    function testBiotTokensCanBeClaimedOnceAfterTpadTokensMigration(uint256 tpadV2Amount1, uint256 tpadV2Amount2)
+        public
+    {
+        // get two random tpad V2 amount between 1 and 1M.
+        tpadV2Amount1 = bound(tpadV2Amount1, 10 ** 18, 1_000_000 * (10 ** 18));
+        tpadV2Amount2 = bound(tpadV2Amount2, 10 ** 18, 1_000_000 * (10 ** 18));
 
-        assertGe(biotAmount1, 10 ** 18);
-        assertGe(biotAmount2, 10 ** 18);
-        assertLe(biotAmount1, 1_000_000 * (10 ** 18));
-        assertLe(biotAmount2, 1_000_000 * (10 ** 18));
+        assertGe(tpadV2Amount1, 10 ** 18);
+        assertGe(tpadV2Amount2, 10 ** 18);
+        assertLe(tpadV2Amount1, 1_000_000 * (10 ** 18));
+        assertLe(tpadV2Amount2, 1_000_000 * (10 ** 18));
 
-        // send the total biot amount to the contract.
-        deal(address(BIOT), address(operator), biotAmount1 + biotAmount2);
+        // send the total tpad V2 amount to the contract.
+        deal(address(TPADV2), address(moperator), tpadV2Amount1 + tpadV2Amount2);
 
         // assert original state.
-        assertGt(tpadbo(address(WALLET1)), 0);
-        assertGt(tpadbo(address(WALLET2)), 0);
-        assertEq(biotbo(address(WALLET1)), 0);
-        assertEq(biotbo(address(WALLET2)), 0);
-        assertEq(biotbo(address(operator)), biotAmount1 + biotAmount2);
-        assertFalse(operator.hasMigrated(address(WALLET1)));
-        assertFalse(operator.hasMigrated(address(WALLET2)));
-        assertFalse(operator.hasClaimed(address(WALLET1)));
-        assertFalse(operator.hasClaimed(address(WALLET2)));
+        assertGt(tpadV1bo(address(WALLET1)), 0);
+        assertGt(tpadV1bo(address(WALLET2)), 0);
+        assertEq(tpadV2bo(address(WALLET1)), 0);
+        assertEq(tpadV2bo(address(WALLET2)), 0);
+        assertEq(tpadV2bo(address(moperator)), tpadV2Amount1 + tpadV2Amount2);
+        assertFalse(moperator.hasMigrated(address(WALLET1)));
+        assertFalse(moperator.hasMigrated(address(WALLET2)));
+        assertFalse(moperator.hasClaimed(address(WALLET1)));
+        assertFalse(moperator.hasClaimed(address(WALLET2)));
 
         // start the migration.
         startMigration();
 
         // build the merkle tree.
-        (bytes32 root, bytes32[] memory proof1, bytes32[] memory proof2) = buildMerkleTree(biotAmount1, biotAmount2);
+        (bytes32 root, bytes32[] memory proof1, bytes32[] memory proof2) = buildMerkleTree(tpadV2Amount1, tpadV2Amount2);
 
         // build another merkle tree with different values to have invalid proofs.
         (, bytes32[] memory invalidProof1, bytes32[] memory invalidProof2) =
-            buildMerkleTree(biotAmount1 + 1, biotAmount2 + 1);
+            buildMerkleTree(tpadV2Amount1 + 1, tpadV2Amount2 + 1);
 
         // set the root.
-        operator.setRoot(root);
+        moperator.setRoot(root);
 
-        // users cant claim biot tokens before they migrated their tpad tokens.
+        // users cant claim biot tokens before they migrated their tpad V1 tokens.
         vm.expectRevert("!migrated");
 
-        claim(WALLET1, biotAmount1, proof1);
+        claim(WALLET1, tpadV2Amount1, proof1);
 
         vm.expectRevert("!migrated");
 
-        claim(WALLET2, biotAmount2, proof2);
+        claim(WALLET2, tpadV2Amount2, proof2);
 
         // migrate both users.
-        approve(WALLET1, address(operator), tpadbo(WALLET1));
-        approve(WALLET2, address(operator), tpadbo(WALLET2));
+        approve(WALLET1, address(moperator), tpadV1bo(WALLET1));
+        approve(WALLET2, address(moperator), tpadV1bo(WALLET2));
 
         migrate(WALLET1);
         migrate(WALLET2);
 
-        // users cant claim with invalid biot amount and valid proof.
+        // users cant claim with invalid tpad V2 amount and valid proof.
         vm.expectRevert("!proof");
 
-        claim(WALLET1, biotAmount1 + 1, proof1);
-
-        vm.expectRevert("!proof");
-
-        claim(WALLET2, biotAmount2 + 1, proof1);
-
-        // users cant claim with valid biot amount and invalid proof.
-        vm.expectRevert("!proof");
-
-        claim(WALLET1, biotAmount1, invalidProof1);
+        claim(WALLET1, tpadV2Amount1 + 1, proof1);
 
         vm.expectRevert("!proof");
 
-        claim(WALLET2, biotAmount2, invalidProof2);
+        claim(WALLET2, tpadV2Amount2 + 1, proof2);
 
-        // first user can claim with valid biot amount and valid proof.
-        vm.expectEmit(true, true, true, true, address(operator));
+        // users cant claim with valid tpad V2 amount and invalid proof.
+        vm.expectRevert("!proof");
 
-        emit Claim(WALLET1, biotAmount1);
+        claim(WALLET1, tpadV2Amount1, invalidProof1);
 
-        claim(WALLET1, biotAmount1, proof1);
+        vm.expectRevert("!proof");
 
-        assertEq(biotbo(address(WALLET1)), biotAmount1);
-        assertEq(biotbo(address(WALLET2)), 0);
-        assertEq(biotbo(address(operator)), biotAmount2);
-        assertTrue(operator.hasClaimed(WALLET1));
-        assertFalse(operator.hasClaimed(WALLET2));
+        claim(WALLET2, tpadV2Amount2, invalidProof2);
 
-        // second user can claim with valid biot amount and valid proof.
-        vm.expectEmit(true, true, true, true, address(operator));
+        // first user can claim with valid tpad V2 amount and valid proof.
+        vm.expectEmit(true, true, true, true, address(moperator));
 
-        emit Claim(WALLET2, biotAmount2);
+        emit Claim(WALLET1, tpadV2Amount1);
 
-        claim(WALLET2, biotAmount2, proof2);
+        claim(WALLET1, tpadV2Amount1, proof1);
 
-        assertEq(biotbo(address(WALLET1)), biotAmount1);
-        assertEq(biotbo(address(WALLET2)), biotAmount2);
-        assertEq(biotbo(address(operator)), 0);
-        assertTrue(operator.hasClaimed(WALLET1));
-        assertTrue(operator.hasClaimed(WALLET2));
+        assertEq(tpadV2bo(address(WALLET1)), tpadV2Amount1);
+        assertEq(tpadV2bo(address(WALLET2)), 0);
+        assertEq(tpadV2bo(address(moperator)), tpadV2Amount2);
+        assertTrue(moperator.hasClaimed(WALLET1));
+        assertFalse(moperator.hasClaimed(WALLET2));
+
+        // second user can claim with valid tpad V2 amount and valid proof.
+        vm.expectEmit(true, true, true, true, address(moperator));
+
+        emit Claim(WALLET2, tpadV2Amount2);
+
+        claim(WALLET2, tpadV2Amount2, proof2);
+
+        assertEq(tpadV2bo(address(WALLET1)), tpadV2Amount1);
+        assertEq(tpadV2bo(address(WALLET2)), tpadV2Amount2);
+        assertEq(tpadV2bo(address(moperator)), 0);
+        assertTrue(moperator.hasClaimed(WALLET1));
+        assertTrue(moperator.hasClaimed(WALLET2));
 
         // users cant claim twice.
         vm.expectRevert("!claimed");
 
-        claim(WALLET1, biotAmount1, proof1);
+        claim(WALLET1, tpadV2Amount1, proof1);
 
         vm.expectRevert("!claimed");
 
-        claim(WALLET2, biotAmount2, proof2);
+        claim(WALLET2, tpadV2Amount2, proof2);
     }
 }
