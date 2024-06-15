@@ -268,6 +268,8 @@ contract MigrationOperatorTest is Test {
         assertFalse(moperator.hasMigrated(address(WALLET2)));
         assertFalse(moperator.hasClaimed(address(WALLET1)));
         assertFalse(moperator.hasClaimed(address(WALLET2)));
+        assertEq(moperator.totalMigrated(), 0);
+        assertEq(moperator.totalClaimed(), 0);
 
         // start the migration.
         startMigration();
@@ -291,6 +293,8 @@ contract MigrationOperatorTest is Test {
         assertFalse(moperator.hasClaimed(address(WALLET1)));
         assertFalse(moperator.hasClaimed(address(WALLET2)));
         assertGt(liqReceiver.balance, originalLiqReceiverEth);
+        assertEq(moperator.totalMigrated(), tpadV1Balance1);
+        assertEq(moperator.totalClaimed(), 0);
 
         console.log(liqReceiver.balance - originalLiqReceiverEth);
 
@@ -313,6 +317,8 @@ contract MigrationOperatorTest is Test {
         assertFalse(moperator.hasClaimed(address(WALLET1)));
         assertFalse(moperator.hasClaimed(address(WALLET2)));
         assertGt(liqReceiver.balance, originalLiqReceiverEth);
+        assertEq(moperator.totalMigrated(), tpadV1Balance1 + tpadV1Balance2);
+        assertEq(moperator.totalClaimed(), 0);
 
         console.log(liqReceiver.balance - originalLiqReceiverEth);
     }
@@ -342,6 +348,8 @@ contract MigrationOperatorTest is Test {
         assertFalse(moperator.hasMigrated(address(WALLET2)));
         assertFalse(moperator.hasClaimed(address(WALLET1)));
         assertFalse(moperator.hasClaimed(address(WALLET2)));
+        assertEq(moperator.totalMigrated(), 0);
+        assertEq(moperator.totalClaimed(), 0);
 
         // start the migration.
         startMigration();
@@ -402,6 +410,7 @@ contract MigrationOperatorTest is Test {
         assertEq(tpadV2bo(address(moperator)), tpadV2Amount2);
         assertTrue(moperator.hasClaimed(WALLET1));
         assertFalse(moperator.hasClaimed(WALLET2));
+        assertEq(moperator.totalClaimed(), tpadV2Amount1);
 
         // second user can claim with valid tpad V2 amount and valid proof.
         vm.expectEmit(true, true, true, true, address(moperator));
@@ -415,6 +424,7 @@ contract MigrationOperatorTest is Test {
         assertEq(tpadV2bo(address(moperator)), 0);
         assertTrue(moperator.hasClaimed(WALLET1));
         assertTrue(moperator.hasClaimed(WALLET2));
+        assertEq(moperator.totalClaimed(), tpadV2Amount1 + tpadV2Amount2);
 
         // users cant claim twice.
         vm.expectRevert("!claimed");

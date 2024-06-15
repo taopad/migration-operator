@@ -21,6 +21,9 @@ contract MigrationOperator is Ownable {
     mapping(address => bool) public hasMigrated;
     mapping(address => bool) public hasClaimed;
 
+    uint256 public totalMigrated;
+    uint256 public totalClaimed;
+
     address public liqReceiver;
 
     bytes32 public root;
@@ -58,7 +61,7 @@ contract MigrationOperator is Ownable {
     }
 
     function migrate() external {
-        uint256 migratedTpadV1 = _transferTpadV1(msg.sender);
+        uint256 tpadV1Amount = _transferTpadV1(msg.sender);
 
         migrating = true;
         _swap();
@@ -67,8 +70,9 @@ contract MigrationOperator is Ownable {
         _transferLiq(liqReceiver);
 
         hasMigrated[msg.sender] = true;
+        totalMigrated += tpadV1Amount;
 
-        emit Migrate(msg.sender, migratedTpadV1);
+        emit Migrate(msg.sender, tpadV1Amount);
     }
 
     function claim(uint256 tpadV2Amount, bytes32[] calldata proof) external {
@@ -84,6 +88,7 @@ contract MigrationOperator is Ownable {
         }
 
         hasClaimed[msg.sender] = true;
+        totalClaimed += tpadV2Amount;
 
         SafeERC20.safeTransfer(TPADV2, msg.sender, tpadV2Amount);
 
